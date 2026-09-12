@@ -1057,6 +1057,7 @@ export const ja = defineLocale({
       pill: '検索'
     },
     profileScope: {
+      activeGatewayOnly: '現在アクティブなゲートウェイとプロファイルでのみ利用できます。',
       appliesTo: '適用対象',
       editsProfile: profile => `このページの変更は「${profile}」プロファイルに適用されます。`
     },
