@@ -167,6 +167,24 @@ it.each(['url', 'ssh'] as const)(
   }
 )
 
+it('picking another legacy profile sets the shared override; re-selecting the active profile clears it', async () => {
+  $connection.set({
+    ...$connection.get()!,
+    mode: 'remote',
+    remoteKind: 'url',
+    connectionId: undefined,
+    registryScoped: undefined
+  })
+  setApiRequestConnection(null)
+  render(<SettingsProfileScope />)
+  fireEvent.pointerDown(screen.getByRole('button', { name: /Applies to/ }), { button: 0 })
+  fireEvent.click(screen.getByRole('menuitemradio', { name: 'default' }))
+  expect($settingsScopeOverride.get()).toBe('default')
+  fireEvent.pointerDown(screen.getByRole('button', { name: /Applies to/ }), { button: 0 })
+  fireEvent.click(screen.getByRole('menuitemradio', { name: 'research' }))
+  expect($settingsScopeOverride.get()).toBeNull()
+})
+
 it('keeps registered defaults reachable with an empty/offline roster and preserves the unregistered primary path', async () => {
   vi.mocked(window.hermesDesktop.getAgentRoster!).mockResolvedValue({
     agents: [],
@@ -185,4 +203,38 @@ it('keeps registered defaults reachable with an empty/offline roster and preserv
   fireEvent.pointerDown(screen.getByRole('button', { name: /Applies to/ }), { button: 0 })
   fireEvent.click(screen.getByRole('menuitemradio', { name: 'default' }))
   expect($settingsRequestProfile.get()).toBe('default')
+})
+
+// #89190/#89162 class: after opening a Bot Mode chat, the ACTIVE profile is
+// the bot's — so with no override the settings pages silently edit the bot's
+// config. The target must be stated (accented) whenever it isn't the default
+// profile, override or not.
+it('states the edit target loudly when the active profile is a non-default bot (no override)', () => {
+  render(<SettingsProfileScope />)
+
+  expect($settingsScopeOverride.get()).toBeNull()
+  const note = document.querySelector('[role="status"]')
+  expect(note).toBeTruthy()
+  expect(note?.getAttribute('data-scope-loud')).toBe('true')
+  expect(note?.textContent).toContain('research')
+})
+
+it('shows no note when following the active DEFAULT profile', () => {
+  $activeGatewayProfile.set('default')
+
+  const { container } = render(<SettingsProfileScope />)
+
+  expect(container.querySelector('[role="status"]')).toBeNull()
+})
+
+it('keeps the quiet note style for an explicit fleet pick of the default profile', async () => {
+  render(<SettingsProfileScope />)
+  fireEvent.pointerDown(screen.getByRole('button', { name: /Applies to/ }), { button: 0 })
+  fireEvent.click(await screen.findByRole('menuitemradio', { name: 'default · This device' }))
+  await waitFor(() => expect($settingsRequestProfile.get()).toEqual({ connectionId: 'local', profile: 'default' }))
+
+  const note = document.querySelector('[role="status"]')
+  expect(note).toBeTruthy()
+  expect(note?.hasAttribute('data-scope-loud')).toBe(false)
+  expect(note?.textContent).toContain('default')
 })

@@ -467,7 +467,13 @@ function MessagingViewInner({ setStatusbarItemGroup: _setStatusbarItemGroup, ...
 
       if (!ok) {
         setRestartNeeded(true)
-        notifyError(new Error(m.restartFailedManual), m.restartFailedManual)
+        notify({
+          kind: 'error',
+          title: m.restartFailedManual,
+          message: m.restartFailedManualDetail,
+          action: { label: m.restartAgain, onClick: () => void runGatewayRestart() },
+          secondaryAction: { label: m.openLogs, onClick: () => void window.hermesDesktop?.revealLogs?.().catch(() => undefined) }
+        })
       }
 
       void refreshPlatforms(true)

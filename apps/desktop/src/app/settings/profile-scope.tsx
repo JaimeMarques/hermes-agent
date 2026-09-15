@@ -23,7 +23,13 @@ import { $connectionsRegistry } from '@/store/connection-registry-state'
 import { $fleetRoster } from '@/store/fleet-roster'
 import { $activeGatewayProfile, $profileColors, $profiles, refreshProfiles } from '@/store/profile'
 import { $connection } from '@/store/session'
-import { $settingsRequestProfile, $settingsScopeProfile, setSettingsScope } from '@/store/settings-scope'
+import {
+  $settingsRequestProfile,
+  $settingsScopeEditsNonDefault,
+  $settingsScopeOverride,
+  $settingsScopeProfile,
+  setSettingsScope
+} from '@/store/settings-scope'
 
 /** A settings-only owner pick: no profile activation, prewarming or sidebar actions. */
 export function SettingsProfileScope({ className }: { className?: string }) {
@@ -31,6 +37,8 @@ export function SettingsProfileScope({ className }: { className?: string }) {
   const scope = t.settings.profileScope
   const selected = useStore($settingsRequestProfile)
   const profile = useStore($settingsScopeProfile)
+  const override = useStore($settingsScopeOverride)
+  const editingNonDefault = useStore($settingsScopeEditsNonDefault)
   const profiles = useStore($profiles)
   const activeProfile = useStore($activeGatewayProfile)
   const colors = useStore($profileColors)
@@ -96,57 +104,76 @@ export function SettingsProfileScope({ className }: { className?: string }) {
   )
 
   return (
-    <div className={cn('flex min-w-0 items-center gap-2', className)} data-slot="settings-profile-scope">
-      <span className="shrink-0 text-xs text-(--ui-text-secondary)">{scope.appliesTo}</span>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            aria-label={`${scope.appliesTo}: ${label}`}
-            className="min-w-0 max-w-80 shrink"
-            size="sm"
-            variant="secondary"
+    <div className={cn('grid gap-1.5', className)} data-slot="settings-profile-scope">
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="shrink-0 text-xs text-(--ui-text-secondary)">{scope.appliesTo}</span>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              aria-label={`${scope.appliesTo}: ${label}`}
+              className="min-w-0 max-w-80 shrink"
+              size="sm"
+              variant="secondary"
+            >
+              <ProfileGlyph
+                aria-hidden="true"
+                color={resolveProfileColor(profile, colors)}
+                isDefault={profile === 'default'}
+                name={profile}
+              />
+              <span className="truncate">{label}</span>
+              <Codicon aria-hidden="true" name="chevron-down" size="0.875rem" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="start"
+            className="max-h-[min(20rem,var(--radix-dropdown-menu-content-available-height))] min-w-56 max-w-80 overflow-y-auto"
+            collisionPadding={8}
           >
-            <ProfileGlyph
-              aria-hidden="true"
-              color={resolveProfileColor(profile, colors)}
-              isDefault={profile === 'default'}
-              name={profile}
-            />
-            <span className="truncate">{label}</span>
-            <Codicon aria-hidden="true" name="chevron-down" size="0.875rem" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent
-          align="start"
-          className="max-h-[min(20rem,var(--radix-dropdown-menu-content-available-height))] min-w-56 max-w-80 overflow-y-auto"
-          collisionPadding={8}
-        >
-          <DropdownMenuRadioGroup value={value}>
-            {legacy && legacyProfiles.map(name => row(name, null))}
-            {groups.map(group => {
-              const names = Array.from(
-                new Set([
-                  group.defaultAgent.profile,
-                  ...group.named.map(agent => agent.profile),
-                  ...(group.connectionId === activeId ? profiles.map(item => item.name) : [])
-                ])
-              )
+            <DropdownMenuRadioGroup value={value}>
+              {legacy && legacyProfiles.map(name => row(name, null))}
+              {groups.map(group => {
+                const names = Array.from(
+                  new Set([
+                    group.defaultAgent.profile,
+                    ...group.named.map(agent => agent.profile),
+                    ...(group.connectionId === activeId ? profiles.map(item => item.name) : [])
+                  ])
+                )
 
-              return (
-                <div data-connection-id={group.connectionId} key={group.connectionId}>
-                  <DropdownMenuLabel className={cn(dropdownMenuSectionLabel, 'flex items-center gap-1.5')}>
-                    <ConnectionGlyph connection={group} />
-                    <span className="truncate">
-                      {group.reachable ? group.label : t.profiles.fleet.gatewayUnreachable(group.label)}
-                    </span>
-                  </DropdownMenuLabel>
-                  {names.map(name => row(name, group.connectionId, group.label))}
-                </div>
-              )
-            })}
-          </DropdownMenuRadioGroup>
-        </DropdownMenuContent>
-      </DropdownMenu>
+                return (
+                  <div data-connection-id={group.connectionId} key={group.connectionId}>
+                    <DropdownMenuLabel className={cn(dropdownMenuSectionLabel, 'flex items-center gap-1.5')}>
+                      <ConnectionGlyph connection={group} />
+                      <span className="truncate">
+                        {group.reachable ? group.label : t.profiles.fleet.gatewayUnreachable(group.label)}
+                      </span>
+                    </DropdownMenuLabel>
+                    {names.map(name => row(name, group.connectionId, group.label))}
+                  </div>
+                )
+              })}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+      {/* Note truth table (override × non-default target, per the store's
+          $settingsScopeEditsNonDefault): non-default target → loud accented
+          note whether or not an override is set (the bot-active misdirect);
+          explicit override onto the default → quiet tertiary note; following
+          the active DEFAULT profile → no note. */}
+      {override !== null || editingNonDefault ? (
+        <p
+          className={cn(
+            'text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height)',
+            editingNonDefault ? 'font-medium text-(--ui-accent)' : 'text-(--ui-text-tertiary)'
+          )}
+          data-scope-loud={editingNonDefault ? 'true' : undefined}
+          role="status"
+        >
+          {scope.editsProfile(profile)}
+        </p>
+      ) : null}
     </div>
   )
 }
