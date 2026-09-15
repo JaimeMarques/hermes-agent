@@ -6,7 +6,7 @@ import { getHermesConfigRecord, saveHermesConfigRecord } from '@/api/config'
 import type { DesktopAgentRoster, DesktopConnectionsRegistry, HermesApiRequest, HermesConnection } from '@/global'
 import { $connectionsRegistry } from '@/store/connection-registry-state'
 import { _resetFleetRosterForTests } from '@/store/fleet-roster'
-import { $activeGatewayProfile, $profiles } from '@/store/profile'
+import { $activeGatewayProfile, $profiles, refreshProfiles } from '@/store/profile'
 import { $activeSessionId, $connection } from '@/store/session'
 import { $settingsRequestProfile, $settingsScopeOverride } from '@/store/settings-scope'
 
@@ -36,8 +36,16 @@ const roster = {
   sources: ['local', 'fixture-lab'].map(connectionId => ({ connectionId, reachable: true }))
 } as DesktopAgentRoster
 
+const fixtureProfiles = [
+  { name: 'default', is_default: true },
+  { name: 'research', is_default: false }
+] as typeof $profiles.value
+
+// Serve a STABLE list, not an echo of $profiles: since 256edfc1f5 a re-home
+// repoints $profiles at the new source's cache (empty until its own read
+// lands), so an echoing mock would keep the wiped list forever.
 const api = vi.fn(async (request: HermesApiRequest) =>
-  request.path === '/api/profiles' ? { profiles: $profiles.get() } : {}
+  request.path === '/api/profiles' ? { profiles: fixtureProfiles } : {}
 )
 
 const getConnectionFor = vi.fn()
@@ -200,6 +208,12 @@ it('keeps registered defaults reachable with an empty/offline roster and preserv
     $connectionsRegistry.set(null)
   })
   expect($settingsRequestProfile.get()).toBeUndefined()
+  // A re-home repoints $profiles at the new source's cache until its own read
+  // lands (256edfc1f5) — the menu still renders rows from the roster/default
+  // fallbacks, but explicit picks need the refreshed list.
+  await act(async () => {
+    await refreshProfiles()
+  })
   fireEvent.pointerDown(screen.getByRole('button', { name: /Applies to/ }), { button: 0 })
   fireEvent.click(screen.getByRole('menuitemradio', { name: 'default' }))
   expect($settingsRequestProfile.get()).toBe('default')
@@ -210,10 +224,10 @@ it('keeps registered defaults reachable with an empty/offline roster and preserv
 // config. The target must be stated (accented) whenever it isn't the default
 // profile, override or not.
 it('states the edit target loudly when the active profile is a non-default bot (no override)', () => {
-  render(<SettingsProfileScope />)
+  const { container } = render(<SettingsProfileScope />)
 
   expect($settingsScopeOverride.get()).toBeNull()
-  const note = document.querySelector('[role="status"]')
+  const note = container.querySelector('[role="status"]')
   expect(note).toBeTruthy()
   expect(note?.getAttribute('data-scope-loud')).toBe('true')
   expect(note?.textContent).toContain('research')
@@ -233,8 +247,7 @@ it('keeps the quiet note style for an explicit fleet pick of the default profile
   fireEvent.click(await screen.findByRole('menuitemradio', { name: 'default · This device' }))
   await waitFor(() => expect($settingsRequestProfile.get()).toEqual({ connectionId: 'local', profile: 'default' }))
 
-  const note = document.querySelector('[role="status"]')
-  expect(note).toBeTruthy()
-  expect(note?.hasAttribute('data-scope-loud')).toBe(false)
-  expect(note?.textContent).toContain('default')
+  const note = screen.getByRole('status')
+  expect(note.getAttribute('data-scope-loud')).toBeNull()
+  expect(note.textContent).toContain('default')
 })
