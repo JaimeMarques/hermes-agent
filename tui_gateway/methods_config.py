@@ -257,6 +257,11 @@ def _readiness_check(rid, params, probe):
             return _ok(rid, {"ok": False, "profile": params.get("profile"),
                              "error": f"Profile '{profile}' does not exist on this backend."})
         home = _profile_home(profile)
+    # ``profile_home: None`` IS the launch-profile request, not "no scope": the
+    # resolver (``_profile_runtime_scope_tokens``) documents None = launch
+    # profile and binds the launch home's own frozen-env secret scope once the
+    # process multiplexes — the same authority every profile-scoped RPC and
+    # session creation uses.
     with _session_profile_runtime_scope({"profile_home": str(home) if home else None}):
         payload = probe(profile, {"profile": profile} if profile else {})
     return _ok(rid, payload)
