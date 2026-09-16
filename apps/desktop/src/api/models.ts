@@ -9,18 +9,11 @@ import type {
   ModelInfoResponse
 } from '@/types/hermes'
 
-import {
-  capabilityScoped,
-  hermesApi,
-  type ProfileScope,
-  profileScoped,
-  scopedDialPriority,
-  STARTUP_REQUEST_TIMEOUT_MS
-} from './client'
+import { capabilityScoped, hermesApi, type ProfileScope, scopedDialPriority, STARTUP_REQUEST_TIMEOUT_MS } from './client'
 
-export function getGlobalModelInfo(profile?: null | string): Promise<ModelInfoResponse> {
+export function getGlobalModelInfo(profile?: ProfileScope): Promise<ModelInfoResponse> {
   return hermesApi<ModelInfoResponse>({
-    ...profileScoped(profile),
+    ...capabilityScoped(profile),
     ...scopedDialPriority(profile),
     path: '/api/model/info',
     timeoutMs: STARTUP_REQUEST_TIMEOUT_MS
@@ -40,7 +33,7 @@ export function getGlobalModelOptions(
     includeUnconfigured?: boolean
     explicitOnly?: boolean
   },
-  profile?: null | string
+  profile?: ProfileScope
 ): Promise<ModelOptionsResult> {
   const params = new URLSearchParams()
 
@@ -57,7 +50,7 @@ export function getGlobalModelOptions(
   }
 
   return hermesApi<ModelOptionsResult>({
-    ...profileScoped(profile),
+    ...capabilityScoped(profile),
     ...scopedDialPriority(profile),
     path: params.size > 0 ? `/api/model/options?${params.toString()}` : '/api/model/options',
     timeoutMs: STARTUP_REQUEST_TIMEOUT_MS
@@ -74,12 +67,9 @@ export interface RecommendedDefaultModel {
 // Recommended default model for a freshly-authenticated provider. Mirrors the
 // curation `hermes model` does — for Nous it honors the free/paid tier so a
 // free user gets a free model instead of a paid default.
-export function getRecommendedDefaultModel(
-  provider: string,
-  profile?: null | string
-): Promise<RecommendedDefaultModel> {
+export function getRecommendedDefaultModel(provider: string, profile?: ProfileScope): Promise<RecommendedDefaultModel> {
   return hermesApi<RecommendedDefaultModel>({
-    ...profileScoped(profile),
+    ...capabilityScoped(profile),
     ...scopedDialPriority(profile),
     path: `/api/model/recommended-default?provider=${encodeURIComponent(provider)}`
   })
@@ -87,10 +77,11 @@ export function getRecommendedDefaultModel(
 
 export function setGlobalModel(
   provider: string,
-  model: string
+  model: string,
+  profile?: ProfileScope
 ): Promise<{ ok: boolean; provider: string; model: string }> {
   return hermesApi<{ ok: boolean; provider: string; model: string }>({
-    ...profileScoped(),
+    ...capabilityScoped(profile),
     path: '/api/model/set',
     method: 'POST',
     body: {
@@ -101,17 +92,17 @@ export function setGlobalModel(
   })
 }
 
-export function getAuxiliaryModels(profile?: null | string): Promise<AuxiliaryModelsResponse> {
+export function getAuxiliaryModels(profile?: ProfileScope): Promise<AuxiliaryModelsResponse> {
   return hermesApi<AuxiliaryModelsResponse>({
-    ...profileScoped(profile),
+    ...capabilityScoped(profile),
     ...scopedDialPriority(profile),
     path: '/api/model/auxiliary'
   })
 }
 
-export function getMoaModels(profile?: null | string): Promise<MoaConfigResponse> {
+export function getMoaModels(profile?: ProfileScope): Promise<MoaConfigResponse> {
   return hermesApi<MoaConfigResponse>({
-    ...profileScoped(profile),
+    ...capabilityScoped(profile),
     ...scopedDialPriority(profile),
     path: '/api/model/moa'
   })
@@ -119,10 +110,10 @@ export function getMoaModels(profile?: null | string): Promise<MoaConfigResponse
 
 export function saveMoaModels(
   body: MoaConfigResponse,
-  profile?: null | string
+  profile?: ProfileScope
 ): Promise<MoaConfigResponse & { ok: boolean }> {
   return hermesApi<MoaConfigResponse & { ok: boolean }>({
-    ...profileScoped(profile),
+    ...capabilityScoped(profile),
     ...scopedDialPriority(profile),
     path: '/api/model/moa',
     method: 'PUT',
@@ -132,10 +123,10 @@ export function saveMoaModels(
 
 export function setModelAssignment(
   body: ModelAssignmentRequest,
-  profile?: null | string
+  profile?: ProfileScope
 ): Promise<ModelAssignmentResponse> {
   return hermesApi<ModelAssignmentResponse>({
-    ...profileScoped(profile),
+    ...capabilityScoped(profile),
     ...scopedDialPriority(profile),
     path: '/api/model/set',
     method: 'POST',
