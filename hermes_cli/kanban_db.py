@@ -2624,17 +2624,17 @@ class ArtifactPreservationError(RuntimeError):
 
 
 class LiveClaimError(ValueError):
-    """``complete_task`` refused: the task is ``running`` under a live claim and
-    the caller neither owns its run (``expected_run_id``) nor passed ``force``.
-    Completing anyway would close the worker's run row underneath a process
-    that is still executing. A ``ValueError`` so tool error handlers treat it
-    as recoverable."""
+    """A terminal transition refused to clear a live claim without run ownership
+    (``expected_run_id``) or an explicit operator override (``force``).
+
+    This guards accidental claim-less calls, not arbitrary local code: the
+    CLI and its recovery overrides remain trusted operator interfaces.
+    A ``ValueError`` so tool error handlers treat it as recoverable.
+    """
 
     def __init__(self, task_id: str):
         super().__init__(
-            f"{task_id} is running under a live worker claim; pass expected_run_id "
-            "(worker ownership) or force=True (explicit operator override) instead "
-            "of closing the live run"
+            f"{task_id} is running under a live worker claim; this caller does not own its run"
         )
 
 
@@ -3064,19 +3064,19 @@ def edit_completed_task_result(
 def block_task(
     conn: sqlite3.Connection, task_id: str, *, reason: Optional[str] = None,
     kind: Optional[str] = None, expected_run_id: Optional[int] = None,
-    force: bool = False,
+    force: bool = False, comment_author: Optional[str] = None,
 ) -> bool:
     """``running``/``ready`` -> ``blocked`` (or ``todo`` / ``triage``, see
     :func:`_route_block`). ``transient`` still counts toward the loop breaker
     so a forever-flaky task escalates. True on any transition.
 
-    A ``running`` task under a live claim is only blocked with proof of
-    ownership (``expected_run_id``) or ``force=True`` (explicit operator
-    override) — otherwise :class:`LiveClaimError`, the same fence
-    :func:`complete_task` applies. Blocking without it would clear the claim
-    and close the dispatcher worker's run row while that worker keeps
-    executing, inviting a concurrent re-dispatch (observed when a
-    ``delegate_task`` reviewer child blocked its parent worker's task).
+    A ``running`` task under a live claim needs matching run ownership
+    (``expected_run_id``) or ``force=True`` (trusted operator override),
+    otherwise :class:`LiveClaimError`. This prevents accidental claim-less
+    transitions, not arbitrary local CLI/code access. See :func:`complete_task`.
+
+    If ``comment_author`` and ``reason`` are supplied, the reason comment
+    commits with the transition; refusals and write failures leave neither.
     """
     if kind is not None and kind not in VALID_BLOCK_KINDS:
         raise ValueError(f"block kind must be one of {sorted(VALID_BLOCK_KINDS)} or None")
@@ -3113,6 +3113,8 @@ def block_task(
             params = (*params, int(expected_run_id))
         if conn.execute(sql, params).rowcount != 1:
             return False
+        if reason and comment_author is not None:
+            add_comment(conn, task_id, comment_author, f"BLOCKED: {reason}")
         run_id = _end_or_synthesize_run(
             conn, task_id, outcome="blocked", status="blocked", summary=reason, synthesize=bool(reason),
         )
@@ -3219,9 +3221,8 @@ def request_review(
             # the same fence as complete_task (_claim_is_live).
             if expected_run_id is None and not force and _claim_is_live(trow):
                 return _ret(
-                    False, "task is running under a live claim; pass expected_run_id "
-                    "(worker ownership) or force=True (explicit operator "
-                    "override) instead of clearing the live run's claim",
+                    False, "task is running under a live claim; wait for the worker "
+                    "to finish or ask the operator to review its ownership",
                 )
             implementer = trow["assignee"]
             if reviewer is None:
@@ -3450,9 +3451,14 @@ def _landing_status_after_parents(conn: sqlite3.Connection, task_id: str) -> str
     return "ready" if _parents_satisfied(conn, task_id) else "todo"
 
 
-def unblock_task(conn: sqlite3.Connection, task_id: str) -> bool:
+def unblock_task(
+    conn: sqlite3.Connection, task_id: str, *, reason: Optional[str] = None,
+    comment_author: Optional[str] = None,
+) -> bool:
     """``blocked``/``scheduled`` -> its resumable phase (parent re-gated; ``review``
-    when that is where it left off), closing any leaked run first."""
+    when that is where it left off), closing any leaked run first.
+    ``comment_author`` records ``reason`` atomically with the transition.
+    """
     now = int(time.time())
     with write_txn(conn):
         resume_status = (
@@ -3483,6 +3489,8 @@ def unblock_task(conn: sqlite3.Connection, task_id: str) -> bool:
         )
         if cur.rowcount != 1:
             return False
+        if reason and comment_author is not None:
+            add_comment(conn, task_id, comment_author, f"UNBLOCK: {reason}")
         _append_event(
             conn, task_id, "unblocked",
             (
@@ -3761,11 +3769,13 @@ def delete_task(conn: sqlite3.Connection, task_id: str) -> bool:
 def schedule_task(
     conn: sqlite3.Connection, task_id: str, *, reason: Optional[str] = None,
     expected_run_id: Optional[int] = None, force: bool = False,
+    comment_author: Optional[str] = None,
 ) -> bool:
     """Park in ``scheduled`` (waiting on time, not a human; not dispatchable)
-    until ``unblock_task`` re-gates it. A live claim is only cleared with
-    proof of ownership (``expected_run_id``) or ``force=True`` — the same
-    fence as :func:`complete_task` / :func:`block_task`."""
+    until ``unblock_task`` re-gates it. A live claim needs matching run
+    ownership (``expected_run_id``) or a trusted operator's ``force=True``;
+    this is not a sandbox. ``comment_author`` records the reason atomically
+    with the transition, as in :func:`block_task`."""
     with write_txn(conn):
         cur_row = conn.execute(
             "SELECT status, claim_lock, worker_pid, worker_started_at FROM tasks WHERE id = ?",
@@ -3792,6 +3802,8 @@ def schedule_task(
             params.append(int(expected_run_id))
         if conn.execute(sql, params).rowcount != 1:
             return False
+        if reason and comment_author is not None:
+            add_comment(conn, task_id, comment_author, f"SCHEDULED: {reason}")
         run_id = _end_or_synthesize_run(
             conn, task_id, outcome="scheduled", status="scheduled", summary=reason, synthesize=bool(reason),
         )
