@@ -985,6 +985,21 @@ def _commented(conn, reason: Optional[str], author, prefix: str, op):
     return run
 
 
+def _block_one(conn, tid: str, reason: Optional[str], kind: Optional[str], *, force: bool = False) -> bool:
+    """block_task with the live-claim guard surfaced as an actionable error."""
+    try:
+        return kb.block_task(
+            conn, tid, reason=reason, kind=kind, expected_run_id=_worker_run_id_for(tid), force=force,
+        )
+    except kb.LiveClaimError:
+        _err(
+            f"cannot block {tid}: a live worker is running it. Wait for the worker, "
+            f"`hermes kanban reclaim {tid}` to release it, or re-run with --force to "
+            f"close its run and block anyway."
+        )
+        return False
+
+
 def _cmd_block(args: argparse.Namespace) -> int:
     reason = _joined_words(args.reason)
     kind = getattr(args, "kind", None)
@@ -1007,9 +1022,24 @@ def _cmd_block(args: argparse.Namespace) -> int:
                 return f"{tid} → triage (unblock loop detected — {verdict}){suffix}"
             return f"Blocked {tid}{suffix}"
 
-        op = _commented(conn, reason, author, "BLOCKED", lambda tid: kb.block_task(
-            conn, tid, reason=reason, kind=kind, expected_run_id=_worker_run_id_for(tid)))
+        op = _commented(conn, reason, author, "BLOCKED", lambda tid: _block_one(
+            conn, tid, reason, kind, force=bool(getattr(args, "force", False))))
         return _bulk_apply(ids, op, ok_msg, lambda tid: f"cannot block {tid}")
+
+
+def _schedule_one(conn, tid: str, reason: Optional[str], *, force: bool = False) -> bool:
+    """schedule_task with the live-claim guard surfaced as an actionable error."""
+    try:
+        return kb.schedule_task(
+            conn, tid, reason=reason, expected_run_id=_worker_run_id_for(tid), force=force,
+        )
+    except kb.LiveClaimError:
+        _err(
+            f"cannot schedule {tid}: a live worker is running it. Wait for the worker, "
+            f"`hermes kanban reclaim {tid}` to release it, or re-run with --force to "
+            f"close its run and schedule anyway."
+        )
+        return False
 
 
 def _cmd_schedule(args: argparse.Namespace) -> int:
@@ -1018,8 +1048,8 @@ def _cmd_schedule(args: argparse.Namespace) -> int:
     ids = _bulk_ids(args)
     suffix = f": {reason}" if reason else ""
     with kbc.connect_closing() as conn:
-        op = _commented(conn, reason, author, "SCHEDULED", lambda tid: kb.schedule_task(
-            conn, tid, reason=reason, expected_run_id=_worker_run_id_for(tid)))
+        op = _commented(conn, reason, author, "SCHEDULED", lambda tid: _schedule_one(
+            conn, tid, reason, force=bool(getattr(args, "force", False))))
         return _bulk_apply(ids, op, lambda tid: f"Scheduled {tid}{suffix}", lambda tid: f"cannot schedule {tid}")
 
 
