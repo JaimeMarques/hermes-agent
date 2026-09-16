@@ -1136,6 +1136,7 @@ export interface Translations {
       pill: string
     }
     profileScope: {
+      activeGatewayOnly: string
       appliesTo: string
       editsProfile: (profile: string) => string
     }
