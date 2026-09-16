@@ -3064,18 +3064,34 @@ def edit_completed_task_result(
 def block_task(
     conn: sqlite3.Connection, task_id: str, *, reason: Optional[str] = None,
     kind: Optional[str] = None, expected_run_id: Optional[int] = None,
+    force: bool = False,
 ) -> bool:
     """``running``/``ready`` -> ``blocked`` (or ``todo`` / ``triage``, see
     :func:`_route_block`). ``transient`` still counts toward the loop breaker
-    so a forever-flaky task escalates. True on any transition."""
+    so a forever-flaky task escalates. True on any transition.
+
+    A ``running`` task under a live claim is only blocked with proof of
+    ownership (``expected_run_id``) or ``force=True`` (explicit operator
+    override) — otherwise :class:`LiveClaimError`, the same fence
+    :func:`complete_task` applies. Blocking without it would clear the claim
+    and close the dispatcher worker's run row while that worker keeps
+    executing, inviting a concurrent re-dispatch (observed when a
+    ``delegate_task`` reviewer child blocked its parent worker's task).
+    """
     if kind is not None and kind not in VALID_BLOCK_KINDS:
         raise ValueError(f"block kind must be one of {sorted(VALID_BLOCK_KINDS)} or None")
     with write_txn(conn):
         cur_row = conn.execute(
-            "SELECT status, block_kind, block_recurrences FROM tasks WHERE id = ?", (task_id,),
+            "SELECT status, block_kind, block_recurrences, claim_lock, worker_pid, "
+            "worker_started_at FROM tasks WHERE id = ?", (task_id,),
         ).fetchone()
         if cur_row is None:
             return False
+        # Refuse to clear a LIVE worker's claim without proof of ownership
+        # (expected_run_id) or an explicit human override (force=True); the
+        # same fence as complete_task (_claim_is_live for what "live" means).
+        if expected_run_id is None and not force and _claim_is_live(cur_row):
+            raise LiveClaimError(task_id)
         source_status = _retry_status_for_run(conn, task_id) if cur_row["status"] == "running" else "ready"
         new_status, event_kind, set_sql, params, payload = _route_block(
             kind, reason, source_status, prev_kind=_row_get(cur_row, "block_kind"),
@@ -3744,11 +3760,23 @@ def delete_task(conn: sqlite3.Connection, task_id: str) -> bool:
 
 def schedule_task(
     conn: sqlite3.Connection, task_id: str, *, reason: Optional[str] = None,
-    expected_run_id: Optional[int] = None,
+    expected_run_id: Optional[int] = None, force: bool = False,
 ) -> bool:
     """Park in ``scheduled`` (waiting on time, not a human; not dispatchable)
-    until ``unblock_task`` re-gates it."""
+    until ``unblock_task`` re-gates it. A live claim is only cleared with
+    proof of ownership (``expected_run_id``) or ``force=True`` — the same
+    fence as :func:`complete_task` / :func:`block_task`."""
     with write_txn(conn):
+        cur_row = conn.execute(
+            "SELECT status, claim_lock, worker_pid, worker_started_at FROM tasks WHERE id = ?",
+            (task_id,),
+        ).fetchone()
+        if cur_row is None:
+            return False
+        # Same live-claim fence as block_task/complete_task: scheduling a task a
+        # live worker is executing would close that worker's run underneath it.
+        if expected_run_id is None and not force and _claim_is_live(cur_row):
+            raise LiveClaimError(task_id)
         params: list[Any] = [task_id]
         sql = """
             UPDATE tasks
