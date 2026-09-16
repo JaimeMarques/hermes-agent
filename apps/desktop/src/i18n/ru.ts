@@ -567,7 +567,8 @@ export const ru = defineLocale({
       sessionDensityComfortable: 'Комфортно',
       sessionDensityDetailed: 'Подробно',
       tabStripTitle: 'Панель вкладок',
-      tabStripDesc: 'Показывать вкладки над зоной. Автоматически скрываются для одной панели, если не открыта другая зона чата или плитки.',
+      tabStripDesc:
+        'Показывать вкладки над зоной. Автоматически скрываются для одной панели, если не открыта другая зона чата или плитки.',
       tabStripAuto: 'Авто',
       tabStripAlways: 'Всегда',
       tabStripNever: 'Никогда',
@@ -1254,6 +1255,7 @@ export const ru = defineLocale({
       pill: 'Поиск'
     },
     profileScope: {
+      activeGatewayOnly: 'Доступно только для активного шлюза и профиля.',
       appliesTo: 'Применяется к',
       editsProfile: profile => `Изменения на этой странице применяются к профилю «${profile}».`
     },
