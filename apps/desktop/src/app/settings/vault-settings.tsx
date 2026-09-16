@@ -29,6 +29,7 @@ import { $settingsScopeProfile } from '@/store/settings-scope'
 
 import { CONTROL_TEXT } from './constants'
 import { ListRow, Pill, SectionHeading, SettingsContent } from './primitives'
+import { SettingsProfileScope } from './profile-scope'
 
 // Vault data is private to one (connection, profile); the cache key carries that owner so a
 // late response from profile A can never paint under profile B.
@@ -402,6 +403,7 @@ export function VaultSettings() {
 
   return (
     <SettingsContent>
+      <SettingsProfileScope className="mb-5" />
       <SectionHeading
         aside={
           <Button className="gap-1.5" onClick={() => openAdd()} size="sm" type="button" variant="outline">

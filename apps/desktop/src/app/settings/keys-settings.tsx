@@ -81,7 +81,14 @@ export function KeysSettings({ view }: KeysSettingsProps) {
   })
 
   if (!vars) {
-    return <SettingsSkeleton sections={[{ rows: 5 }]} />
+    return (
+      <>
+        <SettingsContent>
+          <SettingsProfileScope className="mb-5" />
+        </SettingsContent>
+        <SettingsSkeleton sections={[{ rows: 5 }]} />
+      </>
+    )
   }
 
   return (

@@ -62,7 +62,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-it('keeps failed config/schema reads on their selected owner instead of another gateway', async () => {
+it('keeps the owner selector available when config/schema fails, without reading another gateway', async () => {
   rejectConfig = true
   render(
     <MemoryRouter>
@@ -71,7 +71,9 @@ it('keeps failed config/schema reads on their selected owner instead of another 
       </QueryClientProvider>
     </MemoryRouter>
   )
+  expect(screen.getByRole('button', { name: /Applies to/ })).toBeTruthy()
   await screen.findByRole('button', { name: /Refresh/ })
+  expect(screen.getByRole('button', { name: /Applies to.*research.*fixture-lab/ })).toBeTruthy()
   expect(
     calls
       .filter(request => request.path.startsWith('/api/config'))

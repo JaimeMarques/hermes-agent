@@ -476,7 +476,14 @@ export function ProvidersSettings({
   }
 
   if (!vars) {
-    return <SettingsSkeleton search sections={[{ rows: 6 }]} />
+    return (
+      <>
+        <SettingsContent>
+          <SettingsProfileScope className="mb-5" />
+        </SettingsContent>
+        <SettingsSkeleton search sections={[{ rows: 6 }]} />
+      </>
+    )
   }
 
   const hasOauth = oauthProviders.length > 0
