@@ -695,7 +695,7 @@ def _handle_complete(args: dict, **kw) -> str:
             # worker is executing: refusing here is what keeps that worker's run open.
             return tool_error(
                 f"kanban_complete refused: {claim_err}. Nothing changed. Wait for the worker "
-                f"to finish, or an operator can run `hermes kanban complete --force {tid}`.")
+                "to finish or ask the operator to review its ownership.")
         except kb.HallucinatedCardsError as hall_err:
             # The gate runs before the write txn, so the task was NOT mutated;
             # say so explicitly or the model treats the error as terminal and
@@ -770,7 +770,7 @@ def _handle_block(args: dict, **kw) -> str:
             # worker is executing: refusing here is what keeps that worker's run open.
             return tool_error(
                 f"kanban_block refused: {claim_err}. Nothing changed. Wait for the worker "
-                f"to finish, or an operator can run `hermes kanban block --force {tid}`.")
+                "to finish or ask the operator to review its ownership.")
         _check(ok, f"could not block {tid} (unknown id or not in running/ready)")
         landed_kind = kb.get_task(conn, tid).block_kind
         extra: dict = {"block_kind": landed_kind}
