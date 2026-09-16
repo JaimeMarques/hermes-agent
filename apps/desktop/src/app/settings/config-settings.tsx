@@ -359,7 +359,10 @@ function ConfigSettingsInner({
     // A failed config/schema fetch must surface a retry, not spin forever.
     if ((configLoadFailed && !config) || (schemaFailed && !schema)) {
       return (
-        <div className="flex h-full min-h-0 flex-1">
+        <div className="flex h-full min-h-0 flex-1 flex-col">
+          <SettingsContent>
+            <SettingsProfileScope className="mb-5" />
+          </SettingsContent>
           <PanelEmpty
             action={
               <Button
@@ -392,7 +395,14 @@ function ConfigSettingsInner({
       )
     }
 
-    return <SettingsSkeleton sections={[{ rows: 6 }]} />
+    return (
+      <>
+        <SettingsContent>
+          <SettingsProfileScope className="mb-5" />
+        </SettingsContent>
+        <SettingsSkeleton sections={[{ rows: 6 }]} />
+      </>
+    )
   }
 
   const visibleFields = activeSectionId === 'voice' ? fields.filter(([key]) => voiceFieldVisible(key, config)) : fields
