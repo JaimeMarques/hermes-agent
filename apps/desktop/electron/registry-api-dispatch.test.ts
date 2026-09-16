@@ -30,7 +30,9 @@ async function saturatedLocalRuntime(options: ProfileRouteOptions = {}) {
 
   const ensureRegistryBackend = vi.fn(
     async (connectionId: string, profile?: null | string, correlation?: string, opts?: { passive?: boolean }) => {
-      expect(correlation).toBe(opts?.passive ? '' : undefined)
+      // Both dial paths claim through the correlation arg; only the passive
+      // read bypasses the claim (and then never reaches the cold-spawn path).
+      expect(correlation).toBe('')
       const key = backendScopeKey(connectionId, profile || (connectionId === 'local' ? primary.profile : 'default'))
       const existing = warm.get(key)
 
@@ -433,7 +435,9 @@ describe('registry REST dispatch', () => {
         releaseClaim!()
       } else {
         expect(runtime.ensureRegistryBackend.mock.calls).toEqual([
-          test.request.passive ? ['local', 'primary', '', { passive: true }] : ['local', 'primary']
+          test.request.passive
+            ? ['local', 'primary', '', { passive: true }]
+            : ['local', 'primary', '', { spawnPriority: 'background' }]
         ])
       }
 
@@ -497,7 +501,7 @@ describe('registry REST dispatch', () => {
       expect(runtime.ensureRegistryBackend.mock.calls[0]).toEqual(
         test.request.passive
           ? [connectionId, test.expectedDial, '', { passive: true }]
-          : [connectionId, test.expectedDial]
+          : [connectionId, test.expectedDial, '', { spawnPriority: 'background' }]
       )
 
       if (test.cold) {

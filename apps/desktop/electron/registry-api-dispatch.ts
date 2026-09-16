@@ -8,6 +8,10 @@ import {
 } from './connection-config'
 import { backendScopeKey, LOCAL_CONNECTION_ID } from './connection-registry'
 import { DEFAULT_FETCH_TIMEOUT_MS, resolveTimeoutMs } from './hardening'
+import {
+  type LocalBackendSpawnPriority,
+  spawnPriorityFrom
+} from './pool-spawn-coordinator'
 import { tagRegistrySessionResponse } from './profile-session-routing'
 
 export interface RegistryApiRequest {
@@ -18,6 +22,9 @@ export interface RegistryApiRequest {
   body?: unknown
   upload?: unknown
   timeoutMs?: number
+  /** Wire value of scopedDialPriority(): a user-pointed scope selector dials
+   *  foreground (#111651); ambient calls arrive untagged. */
+  priority?: unknown
 }
 
 interface RegistryApiBackend extends RegistryBackendRequestScope {
@@ -30,7 +37,7 @@ interface RegistryApiDispatchDeps {
     connectionId: string,
     profile?: null | string,
     managedUpdateCorrelation?: string,
-    options?: { passive?: boolean }
+    options?: { passive?: boolean; spawnPriority?: LocalBackendSpawnPriority }
   ) => Promise<RegistryApiBackend>
   fetchJsonForBackend: (
     connection: RegistryApiBackend,
@@ -68,12 +75,18 @@ export function createRegistryApiDispatcher(deps: RegistryApiDispatchDeps) {
       }
     }
 
-    // Passive reads stay outside the claim: an interactive dial must not
-    // coalesce onto their "no warm backend" rejection.
+    // Claim-guarded (#90812): every registry-scoped REST call funnels through
+    // here, so it can race a renderer's own WS reconnect dial for the same
+    // (connectionId, profile) scope; coalescing avoids bootstrapping a second
+    // SSH tunnel / remote dashboard. A passive read never dials, so it stays
+    // OUT of the claim: an interactive open coalescing onto an in-flight
+    // passive read would otherwise inherit its "no warm backend" rejection.
+    const spawnPriority = spawnPriorityFrom(request?.priority)
+
     const connection = request?.passive
       ? await deps.ensureRegistryBackend(registryConnectionId, backendProfile, '', { passive: true })
       : await deps.backendDialClaims.run(backendScopeKey(registryConnectionId, backendProfile), () =>
-          deps.ensureRegistryBackend(registryConnectionId, backendProfile)
+          deps.ensureRegistryBackend(registryConnectionId, backendProfile, '', { spawnPriority })
         )
 
     const requestPath = pathForRegistryBackendRequest(path, requestProfile, connection)

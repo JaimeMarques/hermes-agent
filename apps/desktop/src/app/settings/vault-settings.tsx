@@ -171,7 +171,14 @@ export function VaultSettings() {
 
       return scope && typeof scope === 'object' && scope.connectionId
         ? requestGatewayForAgent<T>(scope.connectionId, scope.profile ?? 'default', method, params)
-        : requestGatewayForProfile<T>(scopeProfile, method, params)
+        : requestGatewayForProfile<T>(
+            scopeProfile,
+            method,
+            params,
+            undefined,
+            undefined,
+            { spawnPriority: 'foreground' }
+          )
     },
     [isCurrent, scope, scopeProfile, v.loadFailed]
   )

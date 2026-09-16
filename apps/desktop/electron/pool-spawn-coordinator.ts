@@ -2,6 +2,13 @@ export type ReleaseLocalBackendSlot = () => void
 
 export type LocalBackendSpawnPriority = 'foreground' | 'background'
 
+/** Single normalization point for wire priority values: anything but an
+ *  explicit 'foreground' dials background, so hydration can never consume the
+ *  pool's reserved foreground slot by accident. */
+export function spawnPriorityFrom(value: unknown): LocalBackendSpawnPriority {
+  return value === 'foreground' ? 'foreground' : 'background'
+}
+
 export type LocalBackendSpawnRequest = {
   acquired: Promise<ReleaseLocalBackendSlot>
   cancel: () => boolean
@@ -40,6 +47,58 @@ export class LocalBackendSlotWaitTimeoutError extends Error {
 
 export function isBackgroundSlotWaitTimeout(error: unknown): boolean {
   return error instanceof LocalBackendSlotWaitTimeoutError && error.silent
+}
+
+/** A retry deferment is expected background control flow, not a start failure. */
+export class BackgroundSlotRetryDeferredError extends Error {
+  constructor(key: string) {
+    super(`Local backend start for "${key}" is backing off after slot saturation.`)
+    this.name = 'BackgroundSlotRetryDeferredError'
+  }
+}
+
+export function isBackgroundSlotRetryDeferred(error: unknown): boolean {
+  return error instanceof BackgroundSlotRetryDeferredError
+}
+
+/**
+ * Per-profile cooldown for background hydration after a pool-slot timeout.
+ *
+ * A full local pool is commonly structural (more profiles than the configured
+ * cap), so retrying every roster refresh creates a permanent timeout and log
+ * storm. Foreground opens bypass this guard; a successful slot acquisition
+ * clears it. Keeping this state outside the coordinator preserves its role as
+ * a fair slot allocator rather than teaching it about hydration policy.
+ */
+export class BackgroundSlotRetryBackoff {
+  #failures = new Map<string, { nextRetryAt: number; attempts: number }>()
+  readonly #baseDelayMs: number
+  readonly #maxDelayMs: number
+
+  constructor({ baseDelayMs = 60_000, maxDelayMs = 15 * 60_000 } = {}) {
+    if (!Number.isFinite(baseDelayMs) || baseDelayMs < 1 || !Number.isFinite(maxDelayMs) || maxDelayMs < baseDelayMs) {
+      throw new RangeError('Background slot retry delays must be positive and ordered.')
+    }
+
+    this.#baseDelayMs = baseDelayMs
+    this.#maxDelayMs = maxDelayMs
+  }
+
+  canAttempt(key: string, now = Date.now()): boolean {
+    return (this.#failures.get(key)?.nextRetryAt ?? 0) <= now
+  }
+
+  recordFailure(key: string, now = Date.now()): number {
+    const attempts = (this.#failures.get(key)?.attempts ?? 0) + 1
+    const delay = Math.min(this.#baseDelayMs * 2 ** (attempts - 1), this.#maxDelayMs)
+    this.#failures.set(key, { attempts, nextRetryAt: now + delay })
+
+    return delay
+  }
+
+  clear(key: string): void {
+    this.#failures.delete(key)
+  }
 }
 
 export async function releaseLocalBackendSlotAfterExit(

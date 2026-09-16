@@ -191,4 +191,27 @@ describe('main.ts wiring for #90812', () => {
     expect(body).toContain('ensureRegistryBackend(connection.id, null)')
     expect(body).toContain("postJsonForBackend(descriptor, '/api/hermes/update'")
   })
+
+  it('routes every registry-scoped REST dispatch (hermes:api) through the single-owner claim', () => {
+    const handlerStart = mainSource.indexOf("ipcMain.handle('hermes:api'")
+    expect(handlerStart).toBeGreaterThan(-1)
+    // The dispatcher itself lives in registry-api-dispatch.ts; the handler's
+    // job is to funnel every registry-scoped request through it.
+    const handlerBody = mainSource.slice(handlerStart, handlerStart + 1_200)
+    expect(handlerBody).toContain('dispatchRegistryApiRequest(request, registryConnectionId')
+
+    const dispatcherSource = fs
+      .readFileSync(path.join(here, 'registry-api-dispatch.ts'), 'utf8')
+      .replace(/\r\n/g, '\n')
+
+    const dispatchStart = dispatcherSource.indexOf('async function dispatchRegistryApiRequest')
+    expect(dispatchStart).toBeGreaterThan(-1)
+    // The extracted module carries the local-primary routing ahead of the
+    // claim — keep the scan window comfortably past the dial.
+    const body = dispatcherSource.slice(dispatchStart, dispatchStart + 3_000)
+
+    expect(body).toContain('backendDialClaims.run(backendScopeKey(registryConnectionId, backendProfile)')
+    expect(body).toContain("ensureRegistryBackend(registryConnectionId, backendProfile, '', { passive: true })")
+    expect(body).toContain("ensureRegistryBackend(registryConnectionId, backendProfile, '', { spawnPriority })")
+  })
 })
