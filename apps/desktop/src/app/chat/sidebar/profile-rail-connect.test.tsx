@@ -10,6 +10,8 @@ import { ProfileRail } from './profile-switcher'
 // gap reported against the multi-connection registry launch).
 
 const navigate = vi.fn()
+const selectProfile = vi.fn()
+const setShowAllProfiles = vi.fn()
 
 vi.mock('react-router', () => ({
   useNavigate: () => navigate
@@ -54,10 +56,10 @@ vi.mock('@/store/profile', () => ({
   profileLabel: (profile: { display_name?: string; name: string }) =>
     (profile.display_name ?? '').trim() || profile.name,
   refreshActiveProfile: vi.fn().mockResolvedValue(undefined),
-  selectProfile: vi.fn(),
+  selectProfile: (name: string) => selectProfile(name),
   setProfileColor: vi.fn(),
   setProfileOrder: vi.fn(),
-  setShowAllProfiles: vi.fn(),
+  setShowAllProfiles: (value: boolean) => setShowAllProfiles(value),
   sortByProfileOrder: (profiles: unknown[]) => profiles
 }))
 
@@ -89,12 +91,15 @@ vi.mock('../../profiles/rename-profile-dialog', () => ({ RenameProfileDialog: ()
 
 const { $hasMultipleConnections } = await import('@/store/connections')
 const hasMultipleConnections = $hasMultipleConnections as ReturnType<typeof atom<boolean>>
-const { $profiles } = await import('@/store/profile')
+const { $profiles, $profileScope } = await import('@/store/profile')
 const profiles = $profiles as ReturnType<typeof atom<Array<{ is_default: boolean; name: string }>>>
+const profileScope = $profileScope as ReturnType<typeof atom<string>>
 
 afterEach(() => {
   cleanup()
+  vi.clearAllMocks()
   hasMultipleConnections.set(false)
+  profileScope.set('default')
   profiles.set([{ is_default: true, name: 'default' }])
 })
 
@@ -115,6 +120,30 @@ describe('ProfileRail multi-gateway entry point', () => {
     // gated behind multiProfile the way the default↔all toggle is.
     expect(screen.getByRole('button', { name: 'Manage gateways…' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Manage profiles…' })).toBeTruthy()
+  })
+
+  it('keeps the default profile explicit and separate from the aggregate view', () => {
+    profiles.set([
+      { is_default: true, name: 'default' },
+      { is_default: false, name: 'work' }
+    ])
+    profileScope.set('*')
+    render(<ProfileRail />)
+
+    const allProfiles = screen.getByRole('button', { name: 'All profiles' })
+    const defaultProfile = screen.getByRole('button', { name: 'Switch to default' })
+
+    expect(allProfiles).not.toBe(defaultProfile)
+    expect(allProfiles.getAttribute('aria-pressed')).toBe('true')
+    expect(defaultProfile.getAttribute('aria-pressed')).toBe('false')
+    expect(defaultProfile.className).toContain('text-(--ui-text-secondary)')
+    expect(defaultProfile.textContent).toContain('default')
+
+    fireEvent.click(allProfiles)
+    expect(setShowAllProfiles).toHaveBeenCalledWith(true)
+
+    fireEvent.click(defaultProfile)
+    expect(selectProfile).toHaveBeenCalledWith('default')
   })
 
   it('keeps the active profile explicit when gateway identity moves to the statusbar', () => {

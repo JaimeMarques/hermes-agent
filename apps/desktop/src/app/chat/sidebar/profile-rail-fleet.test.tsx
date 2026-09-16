@@ -16,6 +16,7 @@ const navigate = vi.fn()
 const selectConnection = vi.fn()
 const selectProfile = vi.fn()
 const getAgentRoster = vi.fn()
+const startPrewarm = vi.fn()
 
 vi.mock('react-router', () => ({
   useNavigate: () => navigate
@@ -101,7 +102,7 @@ vi.mock('@/store/profile-share', () => ({
 }))
 
 vi.mock('./use-profile-prewarm', () => ({
-  useProfilePrewarm: () => ({ cancelPrewarm: vi.fn(), startPrewarm: vi.fn() })
+  useProfilePrewarm: (name: string) => ({ cancelPrewarm: vi.fn(), startPrewarm: () => startPrewarm(name) })
 }))
 
 vi.mock('./use-profile-rail-refresh-on-active', () => ({
@@ -409,7 +410,20 @@ describe('ProfileRail fleet mode', () => {
     // 11 named on Gateway A + local (default, builder) + gateway-b (default) = 14 > 13.
     const container = await renderFleet()
 
-    expect(screen.getByRole('button', { name: 'Profiles' })).toBeTruthy()
+    const trigger = screen.getByRole('button', { name: 'Profiles' })
+    expect(trigger).toBeTruthy()
     expect(container.querySelector('[data-slot="profile-rail-rest-square"]')).toBeNull()
+
+    fireEvent.pointerDown(trigger, { button: 0, pointerType: 'mouse' })
+    const defaultItem = screen.getByRole('menuitemradio', { name: 'default' })
+    expect(defaultItem.getAttribute('aria-checked')).toBe('true')
+    expect(defaultItem.querySelector('.codicon-home')).toBeTruthy()
+
+    fireEvent.pointerEnter(defaultItem)
+    expect(startPrewarm).not.toHaveBeenCalled()
+
+    fireEvent.click(defaultItem)
+    expect(selectProfile).toHaveBeenCalledWith('default')
+    expect(selectConnection).not.toHaveBeenCalled()
   })
 })

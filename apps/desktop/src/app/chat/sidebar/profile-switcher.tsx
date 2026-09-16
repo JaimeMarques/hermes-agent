@@ -132,8 +132,8 @@ const stepThroughCells: Modifier = ({ containerNodeRect, draggingNodeRect, trans
   return { ...transform, x: Math.min(maxX, Math.max(minX, snapped)), y: 0 }
 }
 
-// Arc-Spaces-style profile rail at the sidebar foot: a default↔all toggle pinned
-// left, the colored named profiles scrolling between, and Manage pinned right.
+// Arc-Spaces-style profile rail at the sidebar foot: separate All/default
+// destinations pinned left, named profiles between, and Manage pinned right.
 // The active profile pops in its own color — the "where am I" cue.
 //
 // With one registered gateway this is the whole story. With several, the rail
@@ -267,7 +267,8 @@ export function ProfileRail() {
   const isAll = scope === ALL_PROFILES
   const activeKey = normalizeProfileKey(gatewayProfile)
   const defaultProfile = profiles.find(profile => profile.is_default)
-  const onDefault = !isAll && activeKey === 'default'
+  const defaultKey = defaultProfile ? normalizeProfileKey(defaultProfile.name) : 'default'
+  const onDefault = !isAll && activeKey === defaultKey
 
   const named = sortByProfileOrder(
     profiles.filter(profile => !profile.is_default),
@@ -416,20 +417,26 @@ export function ProfileRail() {
         />
       )}
 
-      {/* One button toggles default ↔ all: home face when scoped to a profile,
-          layers face when showing everything. Pinned left like Manage is right.
-          Hidden until a second profile exists. */}
+      {/* Aggregate browsing and the default profile are distinct destinations.
+          Keep both visible instead of hiding the root profile behind a toggle. */}
       {!fleet &&
         multiProfile &&
         (defaultProfile ? (
-          // On default → toggle to all. Anywhere else (all view or a named
-          // profile) → return to default. So leaving a profile never lands on all.
-          <ProfilePill
-            active={isAll || onDefault}
-            glyph={isAll ? 'layers' : 'home'}
-            label={onDefault ? p.showAllProfiles : p.switchToProfile(profileLabel(defaultProfile))}
-            onSelect={() => (onDefault ? setShowAllProfiles(true) : selectProfile(defaultProfile.name))}
-          />
+          <>
+            <ProfilePill
+              active={isAll}
+              glyph="layers"
+              label={p.allProfiles}
+              onSelect={() => setShowAllProfiles(true)}
+            />
+            <ProfileLabelPill
+              active={onDefault}
+              glyph="home"
+              label={profileLabel(defaultProfile)}
+              onSelect={() => selectProfile(defaultProfile.name)}
+              tooltip={p.switchToProfile(profileLabel(defaultProfile))}
+            />
+          </>
         ) : (
           <ProfilePill active={isAll} glyph="layers" label={p.allProfiles} onSelect={() => setShowAllProfiles(true)} />
         ))}
@@ -456,7 +463,7 @@ export function ProfileRail() {
             onImport={() => void runImportProfileFlow()}
             onSelect={selectProfile}
             onSelectRest={switchToRest}
-            profiles={named}
+            profiles={fleet && defaultProfile ? [defaultProfile, ...named] : named}
             restGroups={restGroups}
           />
         </div>
@@ -720,9 +727,9 @@ function ImportProfileButton({ label }: { label: string }) {
   )
 }
 
-// The condensed rail: every named profile in one compact menu. The trigger
-// shows the active profile (tinted initial + name); on default/all scope it
-// falls back to the placeholder since the left toggle pill carries that state.
+// The condensed rail: active-gateway profiles in one compact menu, plus the
+// other gateways grouped below. The trigger shows the active concrete profile;
+// aggregate scope falls back to the placeholder carried by the All pill.
 function ProfileDropdown({
   activeKey,
   colors,
@@ -766,7 +773,7 @@ function ProfileDropdown({
                 <ProfileGlyph
                   aria-hidden="true"
                   color={resolveProfileColor(activeProfile.name, colors)}
-                  isDefault={false}
+                  isDefault={activeProfile.is_default}
                   name={activeProfile.name}
                 />
                 <span className="truncate">{profileLabel(activeProfile)}</span>
@@ -792,6 +799,7 @@ function ProfileDropdown({
           {profiles.map(profile => (
             <ProfileDropdownItem
               color={resolveProfileColor(profile.name, colors)}
+              isDefault={profile.is_default}
               key={profile.name}
               label={profileLabel(profile)}
               name={profile.name}
@@ -833,21 +841,61 @@ function ProfileDropdown({
 
 // One dropdown row per profile — its own component so each row can own a
 // hover-intent prewarm timer (see useProfilePrewarm).
-function ProfileDropdownItem({ color, label, name }: { color: null | string; label: string; name: string }) {
+function ProfileDropdownItem({
+  color,
+  isDefault,
+  label,
+  name
+}: {
+  color: null | string
+  isDefault: boolean
+  label: string
+  name: string
+}) {
   const { cancelPrewarm, startPrewarm } = useProfilePrewarm(name)
 
   return (
     <DropdownMenuRadioItem
       className="min-w-0"
-      onPointerEnter={startPrewarm}
-      onPointerLeave={cancelPrewarm}
+      onPointerEnter={isDefault ? undefined : startPrewarm}
+      onPointerLeave={isDefault ? undefined : cancelPrewarm}
       value={name}
     >
       <span className="flex min-w-0 items-center gap-1.5">
-        <ProfileGlyph aria-hidden="true" color={color} isDefault={false} name={name} />
+        <ProfileGlyph aria-hidden="true" color={color} isDefault={isDefault} name={name} />
         <span className="truncate">{label}</span>
       </span>
     </DropdownMenuRadioItem>
+  )
+}
+
+interface ProfileLabelPillProps {
+  active: boolean
+  glyph: string
+  label: string
+  onSelect: () => void
+  tooltip: string
+}
+
+function ProfileLabelPill({ active, glyph, label, onSelect, tooltip }: ProfileLabelPillProps) {
+  return (
+    <Tip label={tooltip}>
+      <Button
+        aria-label={tooltip}
+        aria-pressed={active}
+        className={cn(
+          'max-w-24 gap-1 overflow-hidden bg-transparent text-[0.6875rem] text-(--ui-text-secondary) hover:bg-(--ui-control-hover-background) hover:text-foreground',
+          active && 'bg-(--ui-control-active-background) text-foreground'
+        )}
+        onClick={onSelect}
+        size="xs"
+        type="button"
+        variant="ghost"
+      >
+        <Codicon name={glyph} size="0.75rem" />
+        <span className="min-w-0 truncate">{label}</span>
+      </Button>
+    </Tip>
   )
 }
 
