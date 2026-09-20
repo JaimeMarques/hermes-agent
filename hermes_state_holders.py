@@ -21,6 +21,12 @@ except ImportError:  # pragma: no cover - stripped/scaffold installs only
     psutil = None  # type: ignore[assignment]
 
 
+def read_only_db_uri(db_path) -> str:
+    """``file:`` URI for a ``mode=ro`` open. ``as_uri()`` percent-encodes ``?``/``#`` in the home
+    path; a raw ``f"file:{path}?mode=ro"`` truncates there and opens the wrong (empty) database."""
+    return Path(db_path).resolve().as_uri() + "?mode=ro"
+
+
 logger = logging.getLogger(__name__)
 
 _IS_WINDOWS = sys.platform == "win32"
@@ -46,6 +52,18 @@ def _read_proc_argv(pid: int) -> Optional[List[str]]:
         return argv or None
     except OSError:
         return None
+
+
+def describe_holder_pid(pid: int) -> str:
+    """``PID 123 (hermes gateway run)`` for operator-facing holder lists; /proc argv first, psutil elsewhere."""
+    argv = _read_proc_argv(pid)
+    if argv is None and psutil is not None:
+        try:
+            argv = psutil.Process(pid).cmdline() or None
+        except Exception:
+            argv = None
+    who = " ".join(" ".join([os.path.basename(argv[0]), *argv[1:]]).split())[:80] if argv else "command line unavailable"
+    return f"PID {pid} ({who})"
 
 
 def _looks_like_python_executable(program: str) -> bool:

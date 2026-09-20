@@ -24,13 +24,14 @@ import { $reactionsEnabled, setReactionsEnabled } from '@/store/reactions-enable
 import { $reasoningCollapsedByDefault, setReasoningCollapsedByDefault } from '@/store/reasoning-disclosure'
 import { $sessionListDensity, type SessionListDensity, setSessionListDensity } from '@/store/session-list-density'
 import { $tabStripDefault, setTabStripDefault, type TabStripDefault } from '@/store/tabstrip-prefs'
+import { $hideThreadTimeline, setHideThreadTimeline } from '@/store/thread-timeline'
 import { $spentTipCount, $tipsEnabled, resetTips, setTipsEnabled } from '@/store/tips'
 import {
   $titlebarAppActionsSide,
   setTitlebarAppActionsSide,
   type TitlebarAppActionsSide
 } from '@/store/titlebar-app-actions'
-import { $toolViewMode, setToolViewMode } from '@/store/tool-view'
+import { $hideCodeDiffs, $toolViewMode, setHideCodeDiffs, setToolViewMode } from '@/store/tool-view'
 import { $toursEnabled, setToursEnabled } from '@/store/tours'
 import {
   $translucency,
@@ -63,6 +64,7 @@ import { $marketplaceInstalls, isUserTheme, removeUserTheme } from '@/themes/use
 
 import { setHermesConfigCache, useHermesConfigRecord } from '../hooks/use-config-record'
 
+import { ChatFontSetting } from './chat-font-setting'
 import { MODE_OPTIONS } from './constants'
 import { setNested } from './helpers'
 import { PetSettings } from './pet-settings'
@@ -401,6 +403,8 @@ export function AppearanceSettings() {
   const { t, isSavingLocale } = useI18n()
   const { themeName, mode, resolvedMode, availableThemes, setTheme, setMode } = useTheme()
   const toolViewMode = useStore($toolViewMode)
+  const hideCodeDiffs = useStore($hideCodeDiffs)
+  const hideThreadTimeline = useStore($hideThreadTimeline)
   const reasoningCollapsedByDefault = useStore($reasoningCollapsedByDefault)
   const sessionListDensity = useStore($sessionListDensity)
   const tabStripDefault = useStore($tabStripDefault)
@@ -588,7 +592,6 @@ export function AppearanceSettings() {
                                     setTheme(theme.name)
                                   }
                                 }}
-                                title={a.removeTheme}
                                 type="button"
                               >
                                 <Trash2 className="size-3.5" />
@@ -641,6 +644,8 @@ export function AppearanceSettings() {
             id={appearanceSettingElementId(APPEARANCE_SETTING_IDS.uiScale)}
             title={a.uiScaleTitle}
           />
+
+          <ChatFontSetting />
 
           <TerminalFontSetting />
 
@@ -941,6 +946,44 @@ export function AppearanceSettings() {
             description={a.toolViewDesc}
             id={appearanceSettingElementId(APPEARANCE_SETTING_IDS.toolView)}
             title={a.toolViewTitle}
+          />
+
+          <ListRow
+            action={
+              <SegmentedControl
+                onChange={id => {
+                  triggerHaptic('selection')
+                  setHideCodeDiffs(id === 'on')
+                }}
+                options={[
+                  { id: 'off', label: t.common.off },
+                  { id: 'on', label: t.common.on }
+                ]}
+                value={hideCodeDiffs ? 'on' : 'off'}
+              />
+            }
+            description={a.hideCodeDiffsDesc}
+            id={appearanceSettingElementId(APPEARANCE_SETTING_IDS.hideCodeDiffs)}
+            title={a.hideCodeDiffsTitle}
+          />
+
+          <ListRow
+            action={
+              <SegmentedControl
+                onChange={id => {
+                  triggerHaptic('selection')
+                  setHideThreadTimeline(id === 'on')
+                }}
+                options={[
+                  { id: 'off', label: t.common.off },
+                  { id: 'on', label: t.common.on }
+                ]}
+                value={hideThreadTimeline ? 'on' : 'off'}
+              />
+            }
+            description={a.hideThreadTimelineDesc}
+            id={appearanceSettingElementId(APPEARANCE_SETTING_IDS.hideThreadTimeline)}
+            title={a.hideThreadTimelineTitle}
           />
 
           <ListRow
